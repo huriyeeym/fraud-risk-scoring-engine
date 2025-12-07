@@ -1,0 +1,128 @@
+# ============================================
+# RISK ENGINE SERVICE - Configuration
+# ============================================
+
+# ============================================
+# SERVER CONFIGURATION
+# ============================================
+server:
+  port: 8082  # Different port from transaction-service (8081)
+
+# ============================================
+# SPRING CONFIGURATION
+# ============================================
+spring:
+  application:
+    name: risk-engine-service
+
+  # ------------------------------------------
+  # DATABASE (PostgreSQL)
+  # ------------------------------------------
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fraud_db
+    username: fraud_user
+    password: fraud_pass_2025
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # ------------------------------------------
+  # REDIS (CACHE)
+  # ------------------------------------------
+  # Ne yapar? Customer profiles cache'ler
+  # Neden? Hızlı erişim (2ms vs 100ms PostgreSQL)
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms  # Connection timeout
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+  # ------------------------------------------
+  # KAFKA CONFIGURATION
+  # ------------------------------------------
+  kafka:
+    bootstrap-servers: localhost:9092
+
+    # Consumer settings (Transaction'ları dinler)
+    consumer:
+      group-id: risk-engine-group
+      auto-offset-reset: earliest  # En baştan oku (ilk kez başladığında)
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # JSON deserializer için güvenlik ayarı
+        spring.json.trusted.packages: "com.fraud.*"
+        # Auto commit (otomatik offset kaydetme)
+        enable.auto.commit: false
+      # Manual commit için
+      enable-auto-commit: false
+
+    # Producer settings (Alert'leri gönderir)
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+
+# ============================================
+# KAFKA TOPICS
+# ============================================
+fraud:
+  kafka:
+    topic:
+      transactions: transactions-topic
+      alerts: fraud-alerts-topic
+
+# ============================================
+# ML SERVICE CONFIGURATION
+# ============================================
+# Ne yapar? ML Service'e HTTP call yapar
+ml:
+  service:
+    url: http://localhost:8000
+    timeout: 5000  # 5 second timeout
+
+# ============================================
+# FRAUD DETECTION THRESHOLDS
+# ============================================
+# Ne yapar? Fraud detection parametreleri
+fraud:
+  detection:
+    alert-threshold: 70  # Score > 70 ise alert gönder
+    high-amount-multiplier: 3  # Ortalama tutarın kaç katı yüksek sayılır
+    velocity-check-minutes: 10  # Son kaç dakika kontrol edilsin
+    velocity-max-transactions: 5  # Kaç transaction'dan fazlası şüpheli
+
+# ============================================
+# LOGGING
+# ============================================
+logging:
+  level:
+    root: INFO
+    com.fraud.risk: DEBUG
+    org.springframework.kafka: DEBUG
+    org.hibernate.SQL: DEBUG
+
+# ============================================
+# ACTUATOR
+# ============================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
