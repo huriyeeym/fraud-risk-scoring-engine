@@ -1,0 +1,93 @@
+# ============================================
+# TRANSACTION SERVICE - Configuration
+# ============================================
+# Bu dosya: Local development için
+# Docker ortamı için: application-docker.yml kullanılır
+
+# ============================================
+# SERVER CONFIGURATION
+# ============================================
+server:
+  port: 8081  # REST API port
+  servlet:
+    context-path: /  # Base path
+
+# ============================================
+# SPRING CONFIGURATION
+# ============================================
+spring:
+  application:
+    name: transaction-service
+
+  # ------------------------------------------
+  # DATABASE (PostgreSQL)
+  # ------------------------------------------
+  # Ne yapar? Transactions tablosuna kayıt yapar
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fraud_db
+    username: fraud_user
+    password: fraud_pass_2025
+    driver-class-name: org.postgresql.Driver
+
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: none  # Schema'yı init.sql oluşturur, Hibernate değil
+    show-sql: true    # SQL sorgularını loglara yaz (debugging için)
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # ------------------------------------------
+  # KAFKA CONFIGURATION
+  # ------------------------------------------
+  # Ne yapar? Transaction'ları Kafka'ya gönderir
+  kafka:
+    bootstrap-servers: localhost:9092  # Kafka adresi
+
+    # Producer settings (Kafka'ya mesaj gönderen)
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # Acks: all = Tüm replica'lar onaylayana kadar bekleme (güvenli)
+      acks: all
+      # Retry: Hata olursa 3 kez tekrar dene
+      retries: 3
+      properties:
+        # JSON type mapping (Transaction sınıfını JSON'a çevir)
+        spring.json.type.mapping: transaction:com.fraud.transaction.model.Transaction
+
+# ============================================
+# KAFKA TOPIC CONFIGURATION
+# ============================================
+# Custom configuration (application'da kullanılır)
+fraud:
+  kafka:
+    topic:
+      transactions: transactions-topic  # Topic adı
+
+# ============================================
+# LOGGING
+# ============================================
+# Ne yapar? Log seviyesini belirler
+logging:
+  level:
+    root: INFO
+    com.fraud.transaction: DEBUG  # Bu package için daha detaylı log
+    org.springframework.kafka: DEBUG
+    org.hibernate.SQL: DEBUG
+
+# ============================================
+# ACTUATOR (Health Check)
+# ============================================
+# Ne yapar? /actuator/health endpoint'i açar
+# Neden? Docker healthcheck kullanır
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

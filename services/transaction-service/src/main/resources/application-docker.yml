@@ -1,0 +1,32 @@
+# ============================================
+# TRANSACTION SERVICE - Docker Configuration
+# ============================================
+# Bu dosya docker-compose ortamında aktif olur
+# SPRING_PROFILES_ACTIVE=docker environment variable ile
+
+# ============================================
+# DATABASE (PostgreSQL)
+# ============================================
+# Fark: localhost yerine "postgres" (Docker network'teki container adı)
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/fraud_db
+    # Username ve password environment variable'dan gelir
+    # docker-compose.yml'de tanımlı
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+
+  # ------------------------------------------
+  # KAFKA CONFIGURATION
+  # ------------------------------------------
+  # Fark: localhost yerine "kafka" (Docker network'teki container adı)
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+
+# ============================================
+# LOGGING (Docker için daha az detay)
+# ============================================
+logging:
+  level:
+    root: INFO
+    com.fraud.transaction: INFO

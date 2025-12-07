@@ -1,0 +1,302 @@
+# ============================================
+# FRAUD & RISK SCORING ENGINE
+# Docker Compose - Full Stack Orchestration
+# ============================================
+# Bu dosya tüm servisleri tek komutla ayağa kaldırır:
+# docker-compose up -d
+
+version: '3.8'
+
+# ============================================
+# NETWORKS
+# ============================================
+# Tüm servisler aynı network'te iletişim kurar
+networks:
+  fraud-network:
+    driver: bridge
+
+# ============================================
+# VOLUMES
+# ============================================
+# Data persistence (container silinse bile data kalır)
+volumes:
+  postgres-data:       # PostgreSQL verileri
+  kafka-data:          # Kafka logları
+  zookeeper-data:      # Zookeeper verileri
+  redis-data:          # Redis verileri
+
+# ============================================
+# SERVICES
+# ============================================
+services:
+
+  # ------------------------------------------
+  # ZOOKEEPER - Kafka için gerekli
+  # ------------------------------------------
+  # Ne yapar? Kafka cluster yönetimi
+  # Neden gerekli? Kafka tek başına çalışmaz
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: fraud-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - fraud-network
+    restart: unless-stopped
+
+  # ------------------------------------------
+  # KAFKA - Event Streaming Platform
+  # ------------------------------------------
+  # Ne yapar? Mesaj kuyruk sistemi (pub/sub)
+  # Neden? Servisleri birbirinden ayırır (loose coupling)
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: fraud-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"   # Dışarıdan erişim portu
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # Topic Auto-creation
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - fraud-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ------------------------------------------
+  # POSTGRESQL - Main Database
+  # ------------------------------------------
+  # Ne yapar? Transactions, risk_scores, alerts tabloları
+  # Neden PostgreSQL? ACID garantisi, JSONB desteği, performans
+  postgres:
+    image: postgres:15-alpine
+    container_name: fraud-postgres
+    environment:
+      POSTGRES_DB: fraud_db
+      POSTGRES_USER: fraud_user
+      POSTGRES_PASSWORD: fraud_pass_2025
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - fraud-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraud_user -d fraud_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ------------------------------------------
+  # REDIS - Caching Layer
+  # ------------------------------------------
+  # Ne yapar? Customer profilleri cache'ler
+  # Neden? PostgreSQL'den okumak 100ms, Redis'ten 2ms
+  redis:
+    image: redis:7-alpine
+    container_name: fraud-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - fraud-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ------------------------------------------
+  # TRANSACTION SERVICE - Entry Point
+  # ------------------------------------------
+  # Ne yapar? Dışarıdan işlem alır, Kafka'ya yazar
+  # API: POST /api/transactions
+  # Port: 8081
+  transaction-service:
+    build:
+      context: ./services/transaction-service
+      dockerfile: Dockerfile
+    container_name: fraud-transaction-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fraud_db
+      POSTGRES_USER: fraud_user
+      POSTGRES_PASSWORD: fraud_pass_2025
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - fraud-network
+    restart: unless-stopped
+
+  # ------------------------------------------
+  # RISK ENGINE SERVICE - Fraud Detection Core
+  # ------------------------------------------
+  # Ne yapar? Kuralları çalıştırır, ML servisini çağırır
+  # Kafka'dan okur: transactions-topic
+  # Kafka'ya yazar: fraud-alerts-topic
+  # Port: 8082
+  risk-engine-service:
+    build:
+      context: ./services/risk-engine-service
+      dockerfile: Dockerfile
+    container_name: fraud-risk-engine
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fraud_db
+      POSTGRES_USER: fraud_user
+      POSTGRES_PASSWORD: fraud_pass_2025
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ML_SERVICE_URL: http://ml-service:8000
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - fraud-network
+    restart: unless-stopped
+
+  # ------------------------------------------
+  # ML SERVICE - Machine Learning Model
+  # ------------------------------------------
+  # Ne yapar? Fraud probability hesaplar (0-1)
+  # API: POST /predict
+  # Port: 8000
+  # Teknoloji: Python + FastAPI + scikit-learn
+  ml-service:
+    build:
+      context: ./services/ml-service
+      dockerfile: Dockerfile
+    container_name: fraud-ml-service
+    ports:
+      - "8000:8000"
+    environment:
+      MODEL_PATH: /app/models/fraud_model.pkl
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fraud_db
+      POSTGRES_USER: fraud_user
+      POSTGRES_PASSWORD: fraud_pass_2025
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fraud-network
+    restart: unless-stopped
+
+  # ------------------------------------------
+  # ALERT SERVICE - Alert Management
+  # ------------------------------------------
+  # Ne yapar? Yüksek riskli işlemler için alert yönetir
+  # Kafka'dan okur: fraud-alerts-topic
+  # WebSocket: Dashboard'a canlı veri gönderir
+  # Port: 8083
+  alert-service:
+    build:
+      context: ./services/alert-service
+      dockerfile: Dockerfile
+    container_name: fraud-alert-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fraud_db
+      POSTGRES_USER: fraud_user
+      POSTGRES_PASSWORD: fraud_pass_2025
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - fraud-network
+    restart: unless-stopped
+
+  # ------------------------------------------
+  # FRONTEND - React Dashboard
+  # ------------------------------------------
+  # Ne yapar? Canlı fraud dashboard gösterir
+  # Port: 3000
+  # WebSocket: Alert service'e bağlanır
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fraud-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_BASE_URL: http://localhost:8081
+      REACT_APP_WEBSOCKET_URL: ws://localhost:8083/ws
+    depends_on:
+      - transaction-service
+      - alert-service
+    networks:
+      - fraud-network
+    restart: unless-stopped
+
+# ============================================
+# USAGE INSTRUCTIONS
+# ============================================
+# 1. Tüm servisleri başlat:
+#    docker-compose up -d
+#
+# 2. Logları izle:
+#    docker-compose logs -f
+#
+# 3. Belirli bir servisi izle:
+#    docker-compose logs -f transaction-service
+#
+# 4. Servisleri durdur:
+#    docker-compose down
+#
+# 5. Servisleri durdur + volume'leri sil (tüm data gider):
+#    docker-compose down -v
+#
+# 6. Sadece belirli servisleri başlat:
+#    docker-compose up -d postgres kafka redis
+#
+# 7. Servisleri rebuild et:
+#    docker-compose up -d --build
+# ============================================
