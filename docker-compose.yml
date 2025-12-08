@@ -254,23 +254,19 @@ services:
     restart: unless-stopped
 
   # ------------------------------------------
-  # FRONTEND - React Dashboard
+  # DASHBOARD SERVICE - React Frontend
   # ------------------------------------------
-  # Ne yapar? Canlı fraud dashboard gösterir
-  # Port: 3000
-  # WebSocket: Alert service'e bağlanır
-  frontend:
+  # Ne yapar? Fraud analyst dashboard (alert yönetimi)
+  # Port: 80 (nginx)
+  # API: Alert Service (8083)
+  dashboard-service:
     build:
-      context: ./frontend
+      context: ./services/dashboard-service
       dockerfile: Dockerfile
     container_name: fraud-dashboard
     ports:
-      - "3000:3000"
-    environment:
-      REACT_APP_API_BASE_URL: http://localhost:8081
-      REACT_APP_WEBSOCKET_URL: ws://localhost:8083/ws
+      - "3000:80"
     depends_on:
-      - transaction-service
       - alert-service
     networks:
       - fraud-network

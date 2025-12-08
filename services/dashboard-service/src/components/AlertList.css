@@ -1,0 +1,72 @@
+.alert-list {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  overflow: hidden;
+}
+
+.alert-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.alert-list thead {
+  background: #f8f9fa;
+}
+
+.alert-list th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.alert-list td {
+  padding: 1rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.alert-row {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.alert-row:hover {
+  background: #f8f9fa;
+}
+
+.risk-score {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.risk-critical {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.risk-high {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.risk-medium {
+  background: #fff9c4;
+  color: #f57f17;
+}
+
+.risk-low {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 4rem;
+  color: #999;
+  background: white;
+  border-radius: 8px;
+}

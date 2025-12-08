@@ -1,0 +1,27 @@
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: inline-block;
+}
+
+.status-new {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.status-reviewed {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.status-fraud {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+.status-false {
+  background: #e8f5e9;
+  color: #388e3c;
+}
